@@ -33,8 +33,9 @@ import (
 
 // NewSheet provides the function to create a new sheet by given a worksheet
 // name and returns the index of the sheets in the workbook
-// (spreadsheet) after it appended. Note that when creating a new spreadsheet
-// file, the default worksheet named `Sheet1` will be created.
+// (spreadsheet) after it appended. Note that the worksheet names are not
+// case sensitive, when creating a new spreadsheet file, the default
+// worksheet named `Sheet1` will be created.
 func (f *File) NewSheet(name string) int {
 	// Check if the worksheet already exists
 	index := f.GetSheetIndex(name)
@@ -71,12 +72,13 @@ func (f *File) contentTypesReader() *xlsxTypes {
 
 	if f.ContentTypes == nil {
 		f.ContentTypes = new(xlsxTypes)
+		f.ContentTypes.Lock()
+		defer f.ContentTypes.Unlock()
 		if err = f.xmlNewDecoder(bytes.NewReader(namespaceStrictToTransitional(f.readXML("[Content_Types].xml")))).
 			Decode(f.ContentTypes); err != nil && err != io.EOF {
 			log.Printf("xml decode error: %s", err)
 		}
 	}
-
 	return f.ContentTypes
 }
 
@@ -156,6 +158,9 @@ func (f *File) workSheetWriter() {
 	f.Sheet.Range(func(p, ws interface{}) bool {
 		if ws != nil {
 			sheet := ws.(*xlsxWorksheet)
+			if sheet.MergeCells != nil && len(sheet.MergeCells.Cells) > 0 {
+				_ = f.mergeOverlapCells(sheet)
+			}
 			for k, v := range sheet.SheetData.Row {
 				sheet.SheetData.Row[k].C = trimCell(v.C)
 			}
@@ -391,12 +396,13 @@ func (f *File) getSheetID(name string) int {
 }
 
 // GetSheetIndex provides a function to get a sheet index of the workbook by
-// the given sheet name. If the given sheet name is invalid or sheet doesn't
-// exist, it will return an integer type value -1.
+// the given sheet name, the sheet names are not case sensitive. If the given
+// sheet name is invalid or sheet doesn't exist, it will return an integer
+// type value -1.
 func (f *File) GetSheetIndex(name string) int {
 	var idx = -1
 	for index, sheet := range f.GetSheetList() {
-		if sheet == trimSheetName(name) {
+		if strings.EqualFold(sheet, trimSheetName(name)) {
 			idx = index
 		}
 	}
@@ -474,7 +480,7 @@ func (f *File) SetSheetBackground(sheet, picture string) error {
 	if !ok {
 		return ErrImgExt
 	}
-	file, _ := ioutil.ReadFile(picture)
+	file, _ := ioutil.ReadFile(filepath.Clean(picture))
 	name := f.addMedia(file, ext)
 	sheetRels := "xl/worksheets/_rels/" + strings.TrimPrefix(f.sheetMap[trimSheetName(sheet)], "xl/worksheets/") + ".rels"
 	rID := f.addRels(sheetRels, SourceRelationshipImage, strings.Replace(name, "xl", "..", 1), "")
@@ -485,10 +491,12 @@ func (f *File) SetSheetBackground(sheet, picture string) error {
 }
 
 // DeleteSheet provides a function to delete worksheet in a workbook by given
-// worksheet name. Use this method with caution, which will affect changes in
-// references such as formulas, charts, and so on. If there is any referenced
-// value of the deleted worksheet, it will cause a file error when you open it.
-// This function will be invalid when only the one worksheet is left.
+// worksheet name, the sheet names are not case sensitive.the sheet names are
+// not case sensitive. Use this method with caution, which will affect
+// changes in references such as formulas, charts, and so on. If there is any
+// referenced value of the deleted worksheet, it will cause a file error when
+// you open it. This function will be invalid when only the one worksheet is
+// left.
 func (f *File) DeleteSheet(name string) {
 	if f.SheetCount == 1 || f.GetSheetIndex(name) == -1 {
 		return
@@ -514,7 +522,7 @@ func (f *File) DeleteSheet(name string) {
 		}
 	}
 	for idx, sheet := range wb.Sheets.Sheet {
-		if sheet.Name == sheetName {
+		if strings.EqualFold(sheet.Name, sheetName) {
 			wb.Sheets.Sheet = append(wb.Sheets.Sheet[:idx], wb.Sheets.Sheet[idx+1:]...)
 			var sheetXML, rels string
 			if wbRels != nil {
@@ -528,7 +536,7 @@ func (f *File) DeleteSheet(name string) {
 			target := f.deleteSheetFromWorkbookRels(sheet.ID)
 			f.deleteSheetFromContentTypes(target)
 			f.deleteCalcChain(sheet.SheetID, "")
-			delete(f.sheetMap, sheetName)
+			delete(f.sheetMap, sheet.Name)
 			f.Pkg.Delete(sheetXML)
 			f.Pkg.Delete(rels)
 			f.Relationships.Delete(rels)
@@ -647,13 +655,13 @@ func (f *File) SetSheetVisible(name string, visible bool) error {
 		}
 	}
 	for k, v := range content.Sheets.Sheet {
-		xlsx, err := f.workSheetReader(v.Name)
+		ws, err := f.workSheetReader(v.Name)
 		if err != nil {
 			return err
 		}
 		tabSelected := false
-		if len(xlsx.SheetViews.SheetView) > 0 {
-			tabSelected = xlsx.SheetViews.SheetView[0].TabSelected
+		if len(ws.SheetViews.SheetView) > 0 {
+			tabSelected = ws.SheetViews.SheetView[0].TabSelected
 		}
 		if v.Name == name && count > 1 && !tabSelected {
 			content.Sheets.Sheet[k].State = "hidden"
@@ -1198,7 +1206,7 @@ func (p *BlackAndWhite) getPageLayout(ps *xlsxPageSetUp) {
 // the worksheet.
 func (p FirstPageNumber) setPageLayout(ps *xlsxPageSetUp) {
 	if 0 < int(p) {
-		ps.FirstPageNumber = int(p)
+		ps.FirstPageNumber = strconv.Itoa(int(p))
 		ps.UseFirstPageNumber = true
 	}
 }
@@ -1206,11 +1214,13 @@ func (p FirstPageNumber) setPageLayout(ps *xlsxPageSetUp) {
 // getPageLayout provides a method to get the first printed page number for
 // the worksheet.
 func (p *FirstPageNumber) getPageLayout(ps *xlsxPageSetUp) {
-	if ps == nil || ps.FirstPageNumber == 0 || !ps.UseFirstPageNumber {
-		*p = 1
-		return
+	if ps != nil && ps.UseFirstPageNumber {
+		if number, _ := strconv.Atoi(ps.FirstPageNumber); number != 0 {
+			*p = FirstPageNumber(number)
+			return
+		}
 	}
-	*p = FirstPageNumber(ps.FirstPageNumber)
+	*p = 1
 }
 
 // setPageLayout provides a method to set the orientation for the worksheet.
@@ -1516,11 +1526,15 @@ func (f *File) DeleteDefinedName(definedName *DefinedName) error {
 	wb := f.workbookReader()
 	if wb.DefinedNames != nil {
 		for idx, dn := range wb.DefinedNames.DefinedName {
-			var scope string
+			scope := "Workbook"
+			deleteScope := definedName.Scope
+			if deleteScope == "" {
+				deleteScope = "Workbook"
+			}
 			if dn.LocalSheetID != nil {
 				scope = f.GetSheetName(*dn.LocalSheetID)
 			}
-			if scope == definedName.Scope && dn.Name == definedName.Name {
+			if scope == deleteScope && dn.Name == definedName.Name {
 				wb.DefinedNames.DefinedName = append(wb.DefinedNames.DefinedName[:idx], wb.DefinedNames.DefinedName[idx+1:]...)
 				return nil
 			}

@@ -83,7 +83,7 @@ func TestOpenFile(t *testing.T) {
 	assert.NoError(t, err)
 	_, err = f.GetCellFormula("Sheet2", "I11")
 	assert.NoError(t, err)
-	getSharedForumula(&xlsxWorksheet{}, "")
+	getSharedForumula(&xlsxWorksheet{}, "", "")
 
 	// Test read cell value with given illegal rows number.
 	_, err = f.GetCellValue("Sheet2", "a-1")
@@ -184,13 +184,9 @@ func TestSaveFile(t *testing.T) {
 
 func TestSaveAsWrongPath(t *testing.T) {
 	f, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
-	if assert.NoError(t, err) {
-		// Test write file to not exist directory.
-		err = f.SaveAs("")
-		if assert.Error(t, err) {
-			assert.True(t, os.IsNotExist(err), "Error: %v: Expected os.IsNotExists(err) == true", err)
-		}
-	}
+	assert.NoError(t, err)
+	// Test write file to not exist directory.
+	assert.EqualError(t, f.SaveAs(""), "open .: is a directory")
 }
 
 func TestCharsetTranscoder(t *testing.T) {
@@ -203,6 +199,10 @@ func TestOpenReader(t *testing.T) {
 	assert.EqualError(t, err, "zip: not a valid zip file")
 	_, err = OpenReader(bytes.NewReader(oleIdentifier), Options{Password: "password"})
 	assert.EqualError(t, err, "decrypted file failed")
+
+	// Test open spreadsheet with unzip size limit.
+	_, err = OpenFile(filepath.Join("test", "Book1.xlsx"), Options{UnzipSizeLimit: 100})
+	assert.EqualError(t, err, newUnzipSizeLimitError(100).Error())
 
 	// Test open password protected spreadsheet created by Microsoft Office Excel 2010.
 	f, err := OpenFile(filepath.Join("test", "encryptSHA1.xlsx"), Options{Password: "password"})
@@ -322,9 +322,9 @@ func TestSetCellHyperLink(t *testing.T) {
 		t.Log(err)
 	}
 	// Test set cell hyperlink in a work sheet already have hyperlinks.
-	assert.NoError(t, f.SetCellHyperLink("Sheet1", "B19", "https://github.com/360EntSecGroup-Skylar/excelize", "External"))
+	assert.NoError(t, f.SetCellHyperLink("Sheet1", "B19", "https://github.com/xuri/excelize", "External"))
 	// Test add first hyperlink in a work sheet.
-	assert.NoError(t, f.SetCellHyperLink("Sheet2", "C1", "https://github.com/360EntSecGroup-Skylar/excelize", "External"))
+	assert.NoError(t, f.SetCellHyperLink("Sheet2", "C1", "https://github.com/xuri/excelize", "External"))
 	// Test add Location hyperlink in a work sheet.
 	assert.NoError(t, f.SetCellHyperLink("Sheet2", "D6", "Sheet1!D8", "Location"))
 	// Test add Location hyperlink with display & tooltip in a work sheet.
@@ -347,7 +347,7 @@ func TestSetCellHyperLink(t *testing.T) {
 	ws, ok := f.Sheet.Load("xl/worksheets/sheet1.xml")
 	assert.True(t, ok)
 	ws.(*xlsxWorksheet).Hyperlinks = &xlsxHyperlinks{Hyperlink: make([]xlsxHyperlink, 65530)}
-	assert.EqualError(t, f.SetCellHyperLink("Sheet1", "A65531", "https://github.com/360EntSecGroup-Skylar/excelize", "External"), ErrTotalSheetHyperlinks.Error())
+	assert.EqualError(t, f.SetCellHyperLink("Sheet1", "A65531", "https://github.com/xuri/excelize", "External"), ErrTotalSheetHyperlinks.Error())
 
 	f = NewFile()
 	_, err = f.workSheetReader("Sheet1")
@@ -355,7 +355,7 @@ func TestSetCellHyperLink(t *testing.T) {
 	ws, ok = f.Sheet.Load("xl/worksheets/sheet1.xml")
 	assert.True(t, ok)
 	ws.(*xlsxWorksheet).MergeCells = &xlsxMergeCells{Cells: []*xlsxMergeCell{{Ref: "A:A"}}}
-	err = f.SetCellHyperLink("Sheet1", "A1", "https://github.com/360EntSecGroup-Skylar/excelize", "External")
+	err = f.SetCellHyperLink("Sheet1", "A1", "https://github.com/xuri/excelize", "External")
 	assert.EqualError(t, err, `cannot convert cell "A" to coordinates: invalid cell name "A"`)
 }
 
@@ -1226,6 +1226,7 @@ func TestWorkSheetReader(t *testing.T) {
 	f.Pkg.Store("xl/worksheets/sheet1.xml", MacintoshCyrillicCharset)
 	_, err := f.workSheetReader("Sheet1")
 	assert.EqualError(t, err, "xml decode error: XML syntax error on line 1: invalid UTF-8")
+	assert.EqualError(t, f.UpdateLinkedValue(), "xml decode error: XML syntax error on line 1: invalid UTF-8")
 
 	// Test on no checked worksheet.
 	f = NewFile()
@@ -1272,7 +1273,7 @@ func prepareTestBook1() (*File, error) {
 
 	// Test add picture to worksheet with offset, external hyperlink and positioning.
 	err = f.AddPicture("Sheet1", "F21", filepath.Join("test", "images", "excel.png"),
-		`{"x_offset": 10, "y_offset": 10, "hyperlink": "https://github.com/360EntSecGroup-Skylar/excelize", "hyperlink_type": "External", "positioning": "oneCell"}`)
+		`{"x_offset": 10, "y_offset": 10, "hyperlink": "https://github.com/xuri/excelize", "hyperlink_type": "External", "positioning": "oneCell"}`)
 	if err != nil {
 		return nil, err
 	}

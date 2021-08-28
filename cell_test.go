@@ -41,7 +41,7 @@ func TestConcurrency(t *testing.T) {
 			assert.NoError(t, f.SetCellStyle("Sheet1", "A3", "A3", style))
 			// Concurrency add picture
 			assert.NoError(t, f.AddPicture("Sheet1", "F21", filepath.Join("test", "images", "excel.jpg"),
-				`{"x_offset": 10, "y_offset": 10, "hyperlink": "https://github.com/360EntSecGroup-Skylar/excelize", "hyperlink_type": "External", "positioning": "oneCell"}`))
+				`{"x_offset": 10, "y_offset": 10, "hyperlink": "https://github.com/xuri/excelize", "hyperlink_type": "External", "positioning": "oneCell"}`))
 			// Concurrency get cell picture
 			name, raw, err := f.GetPicture("Sheet1", "A1")
 			assert.Equal(t, "", name)
@@ -181,6 +181,7 @@ func TestGetCellValue(t *testing.T) {
 	// Test get cell value without r attribute of the row.
 	f := NewFile()
 	sheetData := `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData>%s</sheetData></worksheet>`
+
 	f.Sheet.Delete("xl/worksheets/sheet1.xml")
 	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, `<row r="3"><c t="str"><v>A3</v></c></row><row><c t="str"><v>A4</v></c><c t="str"><v>B4</v></c></row><row r="7"><c t="str"><v>A7</v></c><c t="str"><v>B7</v></c></row><row><c t="str"><v>A8</v></c><c t="str"><v>B8</v></c></row>`)))
 	f.checked = nil
@@ -196,23 +197,50 @@ func TestGetCellValue(t *testing.T) {
 	cols, err := f.GetCols("Sheet1")
 	assert.Equal(t, [][]string{{"", "", "A3", "A4", "", "", "A7", "A8"}, {"", "", "", "B4", "", "", "B7", "B8"}}, cols)
 	assert.NoError(t, err)
+
 	f.Sheet.Delete("xl/worksheets/sheet1.xml")
 	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, `<row r="2"><c r="A2" t="str"><v>A2</v></c></row><row r="2"><c r="B2" t="str"><v>B2</v></c></row>`)))
 	f.checked = nil
 	cell, err := f.GetCellValue("Sheet1", "A2")
 	assert.Equal(t, "A2", cell)
 	assert.NoError(t, err)
+
 	f.Sheet.Delete("xl/worksheets/sheet1.xml")
 	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, `<row r="2"><c r="A2" t="str"><v>A2</v></c></row><row r="2"><c r="B2" t="str"><v>B2</v></c></row>`)))
 	f.checked = nil
 	rows, err = f.GetRows("Sheet1")
 	assert.Equal(t, [][]string{nil, {"A2", "B2"}}, rows)
 	assert.NoError(t, err)
+
 	f.Sheet.Delete("xl/worksheets/sheet1.xml")
 	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, `<row r="1"><c r="A1" t="str"><v>A1</v></c></row><row r="1"><c r="B1" t="str"><v>B1</v></c></row>`)))
 	f.checked = nil
 	rows, err = f.GetRows("Sheet1")
 	assert.Equal(t, [][]string{{"A1", "B1"}}, rows)
+	assert.NoError(t, err)
+
+	f.Sheet.Delete("xl/worksheets/sheet1.xml")
+	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, `<row><c t="str"><v>A3</v></c></row><row><c t="str"><v>A4</v></c><c t="str"><v>B4</v></c></row><row r="7"><c t="str"><v>A7</v></c><c t="str"><v>B7</v></c></row><row><c t="str"><v>A8</v></c><c t="str"><v>B8</v></c></row>`)))
+	f.checked = nil
+	rows, err = f.GetRows("Sheet1")
+	assert.Equal(t, [][]string{{"A3"}, {"A4", "B4"}, nil, nil, nil, nil, {"A7", "B7"}, {"A8", "B8"}}, rows)
+	assert.NoError(t, err)
+
+	f.Sheet.Delete("xl/worksheets/sheet1.xml")
+	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, `<row r="0"><c r="H6" t="str"><v>H6</v></c><c r="A1" t="str"><v>r0A6</v></c><c r="F4" t="str"><v>F4</v></c></row><row><c r="A1" t="str"><v>A6</v></c><c r="B1" t="str"><v>B6</v></c><c r="C1" t="str"><v>C6</v></c></row><row r="3"><c r="A3"><v>100</v></c><c r="B3" t="str"><v>B3</v></c></row>`)))
+	f.checked = nil
+	cell, err = f.GetCellValue("Sheet1", "H6")
+	assert.Equal(t, "H6", cell)
+	assert.NoError(t, err)
+	rows, err = f.GetRows("Sheet1")
+	assert.Equal(t, [][]string{
+		{"A6", "B6", "C6"},
+		nil,
+		{"100", "B3"},
+		{"", "", "", "", "", "F4"},
+		nil,
+		{"", "", "", "", "", "", "", "H6"},
+	}, rows)
 	assert.NoError(t, err)
 }
 
@@ -226,6 +254,28 @@ func TestGetCellFormula(t *testing.T) {
 	assert.NoError(t, f.SetCellValue("Sheet1", "A1", true))
 	_, err = f.GetCellFormula("Sheet1", "A1")
 	assert.NoError(t, err)
+
+	// Test get cell shared formula
+	f = NewFile()
+	sheetData := `<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="1"><c r="A1"><v>1</v></c><c r="B1"><f>2*A1</f></c></row><row r="2"><c r="A2"><v>2</v></c><c r="B2"><f t="shared" ref="B2:B7" si="0">%s</f></c></row><row r="3"><c r="A3"><v>3</v></c><c r="B3"><f t="shared" si="0"/></c></row><row r="4"><c r="A4"><v>4</v></c><c r="B4"><f t="shared" si="0"/></c></row><row r="5"><c r="A5"><v>5</v></c><c r="B5"><f t="shared" si="0"/></c></row><row r="6"><c r="A6"><v>6</v></c><c r="B6"><f t="shared" si="0"/></c></row><row r="7"><c r="A7"><v>7</v></c><c r="B7"><f t="shared" si="0"/></c></row></sheetData></worksheet>`
+
+	for sharedFormula, expected := range map[string]string{
+		`2*A2`:           `2*A3`,
+		`2*A1A`:          `2*A2A`,
+		`2*$A$2+LEN("")`: `2*$A$2+LEN("")`,
+	} {
+		f.Sheet.Delete("xl/worksheets/sheet1.xml")
+		f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(fmt.Sprintf(sheetData, sharedFormula)))
+		formula, err := f.GetCellFormula("Sheet1", "B3")
+		assert.NoError(t, err)
+		assert.Equal(t, expected, formula)
+	}
+
+	f.Sheet.Delete("xl/worksheets/sheet1.xml")
+	f.Pkg.Store("xl/worksheets/sheet1.xml", []byte(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main"><sheetData><row r="2"><c r="B2"><f t="shared" si="0"></f></c></row></sheetData></worksheet>`))
+	formula, err := f.GetCellFormula("Sheet1", "B2")
+	assert.NoError(t, err)
+	assert.Equal(t, "", formula)
 }
 
 func ExampleFile_SetCellFloat() {
@@ -401,6 +451,9 @@ func TestSetCellRichText(t *testing.T) {
 	assert.EqualError(t, f.SetCellRichText("SheetN", "A1", richTextRun), "sheet SheetN is not exist")
 	// Test set cell rich text with illegal cell coordinates
 	assert.EqualError(t, f.SetCellRichText("Sheet1", "A", richTextRun), `cannot convert cell "A" to coordinates: invalid cell name "A"`)
+	richTextRun = []RichTextRun{{Text: strings.Repeat("s", TotalCellChars+1)}}
+	// Test set cell rich text with characters over the maximum limit
+	assert.EqualError(t, f.SetCellRichText("Sheet1", "A1", richTextRun), ErrCellCharsLength.Error())
 }
 
 func TestFormattedValue2(t *testing.T) {

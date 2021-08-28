@@ -23,8 +23,13 @@ import (
 	"github.com/mohae/deepcopy"
 )
 
-// GetRows return all the rows in a sheet by given worksheet name (case
-// sensitive). For example:
+// GetRows return all the rows in a sheet by given worksheet name
+// (case sensitive), returned as a two-dimensional array, where the value of
+// the cell is converted to the string type. If the cell format can be
+// applied to the value of the cell, the applied value will be used,
+// otherwise the original value will be used. GetRows fetched the rows with
+// value or formula cells, the tail continuously empty cell will be skipped.
+// For example:
 //
 //    rows, err := f.GetRows("Sheet1")
 //    if err != nil {
@@ -110,7 +115,7 @@ func (rows *Rows) Columns() ([]string, error) {
 			}
 		case xml.EndElement:
 			rowIterator.inElement = xmlElement.Name.Local
-			if rowIterator.row == 0 {
+			if rowIterator.row == 0 && rowIterator.rows.curRow > 1 {
 				rowIterator.row = rowIterator.rows.curRow
 			}
 			if rowIterator.inElement == "row" && rowIterator.row+1 < rowIterator.rows.curRow {
@@ -378,7 +383,7 @@ func (c *xlsxC) getValueFrom(f *File, d *xlsxSST) (string, error) {
 		return f.formattedValue(c.S, c.V), nil
 	default:
 		isNum, precision := isNumeric(c.V)
-		if isNum && precision > 15 {
+		if isNum && precision > 10 {
 			val, _ := roundPrecision(c.V)
 			if val != c.V {
 				return f.formattedValue(c.S, val), nil
@@ -614,7 +619,7 @@ func (f *File) duplicateMergeCells(sheet string, ws *xlsxWorksheet, row, row2 in
 		row++
 	}
 	for _, rng := range ws.MergeCells.Cells {
-		coordinates, err := f.areaRefToCoordinates(rng.Ref)
+		coordinates, err := areaRefToCoordinates(rng.Ref)
 		if err != nil {
 			return err
 		}
@@ -624,7 +629,7 @@ func (f *File) duplicateMergeCells(sheet string, ws *xlsxWorksheet, row, row2 in
 	}
 	for i := 0; i < len(ws.MergeCells.Cells); i++ {
 		areaData := ws.MergeCells.Cells[i]
-		coordinates, _ := f.areaRefToCoordinates(areaData.Ref)
+		coordinates, _ := areaRefToCoordinates(areaData.Ref)
 		x1, y1, x2, y2 := coordinates[0], coordinates[1], coordinates[2], coordinates[3]
 		if y1 == y2 && y1 == row {
 			from, _ := CoordinatesToCellName(x1, row2)
@@ -715,6 +720,43 @@ func checkRow(ws *xlsxWorksheet) error {
 				ws.SheetData.Row[rowIdx].C[colNum-1] = *colData
 			}
 		}
+	}
+	return nil
+}
+
+// SetRowStyle provides a function to set the style of rows by given worksheet
+// name, row range, and style ID. Note that this will overwrite the existing
+// styles for the rows, it won't append or merge style with existing styles.
+//
+// For example set style of row 1 on Sheet1:
+//
+//    err = f.SetRowStyle("Sheet1", 1, style)
+//
+// Set style of rows 1 to 10 on Sheet1:
+//
+//    err = f.SetRowStyle("Sheet1", 1, 10, style)
+//
+func (f *File) SetRowStyle(sheet string, start, end, styleID int) error {
+	if end < start {
+		start, end = end, start
+	}
+	if start < 1 {
+		return newInvalidRowNumberError(start)
+	}
+	if end > TotalRows {
+		return ErrMaxRows
+	}
+	if styleID < 0 {
+		return newInvalidStyleID(styleID)
+	}
+	ws, err := f.workSheetReader(sheet)
+	if err != nil {
+		return err
+	}
+	prepareSheetXML(ws, 0, end)
+	for row := start - 1; row < end; row++ {
+		ws.SheetData.Row[row].S = styleID
+		ws.SheetData.Row[row].CustomFormat = true
 	}
 	return nil
 }

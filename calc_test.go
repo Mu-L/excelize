@@ -926,6 +926,10 @@ func TestCalcCellValue(t *testing.T) {
 		"=OR(1=2,2=3)": "FALSE",
 		// TRUE
 		"=TRUE()": "TRUE",
+		// XOR
+		"=XOR(1>0,2>0)":                       "FALSE",
+		"=XOR(1>0,0>1)":                       "TRUE",
+		"=XOR(1>0,0>1,INT(0),INT(1),A1:A4,2)": "FALSE",
 		// Date and Time Functions
 		// DATE
 		"=DATE(2020,10,21)": "2020-10-21 00:00:00 +0000 UTC",
@@ -944,6 +948,34 @@ func TestCalcCellValue(t *testing.T) {
 		"=DATEDIF(43101,43891,\"YD\")": "59",
 		"=DATEDIF(36526,73110,\"YD\")": "60",
 		"=DATEDIF(42171,44242,\"yd\")": "244",
+		// DAY
+		"=DAY(0)":                                "0",
+		"=DAY(INT(7))":                           "7",
+		"=DAY(\"35\")":                           "4",
+		"=DAY(42171)":                            "16",
+		"=DAY(\"2-28-1900\")":                    "28",
+		"=DAY(\"31-May-2015\")":                  "31",
+		"=DAY(\"01/03/2019 12:14:16\")":          "3",
+		"=DAY(\"January 25, 2020 01 AM\")":       "25",
+		"=DAY(\"January 25, 2020 01:03 AM\")":    "25",
+		"=DAY(\"January 25, 2020 12:00:00 AM\")": "25",
+		"=DAY(\"1900-1-1\")":                     "1",
+		"=DAY(\"12-1-1900\")":                    "1",
+		"=DAY(\"3-January-1900\")":               "3",
+		"=DAY(\"3-February-2000\")":              "3",
+		"=DAY(\"3-February-2008\")":              "3",
+		"=DAY(\"01/25/20\")":                     "25",
+		"=DAY(\"01/25/31\")":                     "25",
+		// MONTH
+		"=MONTH(42171)":           "6",
+		"=MONTH(\"31-May-2015\")": "5",
+		// YEAR
+		"=YEAR(15)":              "1900",
+		"=YEAR(\"15\")":          "1900",
+		"=YEAR(2048)":            "1905",
+		"=YEAR(42171)":           "2015",
+		"=YEAR(\"29-May-2015\")": "2015",
+		"=YEAR(\"05/03/1984\")":  "1984",
 		// Text Functions
 		// CHAR
 		"=CHAR(65)": "A",
@@ -1090,6 +1122,8 @@ func TestCalcCellValue(t *testing.T) {
 		`=IF(1<>1, "equal", "notequal")`:        "notequal",
 		`=IF("A"="A", "equal", "notequal")`:     "equal",
 		`=IF("A"<>"A", "equal", "notequal")`:    "notequal",
+		`=IF(FALSE,0,ROUND(4/2,0))`:             "2",
+		`=IF(TRUE,ROUND(4/2,0),0)`:              "2",
 		// Excel Lookup and Reference Functions
 		// CHOOSE
 		"=CHOOSE(4,\"red\",\"blue\",\"green\",\"brown\")": "brown",
@@ -1129,6 +1163,11 @@ func TestCalcCellValue(t *testing.T) {
 		// LOOKUP
 		"=LOOKUP(F8,F8:F9,F8:F9)":      "32080",
 		"=LOOKUP(F8,F8:F9,D8:D9)":      "Feb",
+		"=LOOKUP(E3,E2:E5,F2:F5)":      "22100",
+		"=LOOKUP(E3,E2:F5)":            "22100",
+		"=LOOKUP(F3+1,F3:F4,F3:F4)":    "22100",
+		"=LOOKUP(F4+1,F3:F4,F3:F4)":    "53321",
+		"=LOOKUP(1,MUNIT(1))":          "1",
 		"=LOOKUP(1,MUNIT(1),MUNIT(1))": "1",
 		// ROW
 		"=ROW()":                "1",
@@ -1911,6 +1950,10 @@ func TestCalcCellValue(t *testing.T) {
 		"=OR(1" + strings.Repeat(",1", 30) + ")": "OR accepts at most 30 arguments",
 		// TRUE
 		"=TRUE(A1)": "TRUE takes no arguments",
+		// XOR
+		"=XOR()":              "XOR requires at least 1 argument",
+		"=XOR(\"text\")":      "#VALUE!",
+		"=XOR(XOR(\"text\"))": "#VALUE!",
 		// Date and Time Functions
 		// DATE
 		"=DATE()":               "DATE requires 3 number arguments",
@@ -1922,6 +1965,52 @@ func TestCalcCellValue(t *testing.T) {
 		"=DATEDIF(\"\",\"\",\"\")":    "strconv.ParseFloat: parsing \"\": invalid syntax",
 		"=DATEDIF(43891,43101,\"Y\")": "start_date > end_date",
 		"=DATEDIF(43101,43891,\"x\")": "DATEDIF has invalid unit",
+		// DAY
+		"=DAY()":         "DAY requires exactly 1 argument",
+		"=DAY(-1)":       "DAY only accepts positive argument",
+		"=DAY(0,0)":      "DAY requires exactly 1 argument",
+		"=DAY(\"text\")": "#VALUE!",
+		"=DAY(\"January 25, 2020 9223372036854775808 AM\")":                   "#VALUE!",
+		"=DAY(\"January 25, 2020 9223372036854775808:00 AM\")":                "#VALUE!",
+		"=DAY(\"January 25, 2020 00:9223372036854775808 AM\")":                "#VALUE!",
+		"=DAY(\"January 25, 2020 9223372036854775808:00.0 AM\")":              "#VALUE!",
+		"=DAY(\"January 25, 2020 0:1" + strings.Repeat("0", 309) + ".0 AM\")": "#VALUE!",
+		"=DAY(\"January 25, 2020 9223372036854775808:00:00 AM\")":             "#VALUE!",
+		"=DAY(\"January 25, 2020 0:9223372036854775808:0 AM\")":               "#VALUE!",
+		"=DAY(\"January 25, 2020 0:0:1" + strings.Repeat("0", 309) + " AM\")": "#VALUE!",
+		"=DAY(\"January 25, 2020 0:61:0 AM\")":                                "#VALUE!",
+		"=DAY(\"January 25, 2020 0:00:60 AM\")":                               "#VALUE!",
+		"=DAY(\"January 25, 2020 24:00:00\")":                                 "#VALUE!",
+		"=DAY(\"January 25, 2020 00:00:10001\")":                              "#VALUE!",
+		"=DAY(\"9223372036854775808/25/2020\")":                               "#VALUE!",
+		"=DAY(\"01/9223372036854775808/2020\")":                               "#VALUE!",
+		"=DAY(\"01/25/9223372036854775808\")":                                 "#VALUE!",
+		"=DAY(\"01/25/10000\")":                                               "#VALUE!",
+		"=DAY(\"01/25/100\")":                                                 "#VALUE!",
+		"=DAY(\"January 9223372036854775808, 2020\")":                         "#VALUE!",
+		"=DAY(\"January 25, 9223372036854775808\")":                           "#VALUE!",
+		"=DAY(\"January 25, 10000\")":                                         "#VALUE!",
+		"=DAY(\"January 25, 100\")":                                           "#VALUE!",
+		"=DAY(\"9223372036854775808-25-2020\")":                               "#VALUE!",
+		"=DAY(\"01-9223372036854775808-2020\")":                               "#VALUE!",
+		"=DAY(\"01-25-9223372036854775808\")":                                 "#VALUE!",
+		"=DAY(\"1900-0-0\")":                                                  "#VALUE!",
+		"=DAY(\"14-25-1900\")":                                                "#VALUE!",
+		"=DAY(\"3-January-9223372036854775808\")":                             "#VALUE!",
+		"=DAY(\"9223372036854775808-January-1900\")":                          "#VALUE!",
+		"=DAY(\"0-January-1900\")":                                            "#VALUE!",
+		// MONTH
+		"=MONTH()":                    "MONTH requires exactly 1 argument",
+		"=MONTH(0,0)":                 "MONTH requires exactly 1 argument",
+		"=MONTH(-1)":                  "MONTH only accepts positive argument",
+		"=MONTH(\"text\")":            "#VALUE!",
+		"=MONTH(\"January 25, 100\")": "#VALUE!",
+		// YEAR
+		"=YEAR()":                    "YEAR requires exactly 1 argument",
+		"=YEAR(0,0)":                 "YEAR requires exactly 1 argument",
+		"=YEAR(-1)":                  "YEAR only accepts positive argument",
+		"=YEAR(\"text\")":            "#VALUE!",
+		"=YEAR(\"January 25, 100\")": "#VALUE!",
 		// NOW
 		"=NOW(A1)": "NOW accepts no arguments",
 		// TODAY
@@ -2071,6 +2160,12 @@ func TestCalcCellValue(t *testing.T) {
 		"=HLOOKUP(INT(1),E2:E9,1)":       "HLOOKUP no result found",
 		"=HLOOKUP(MUNIT(2),MUNIT(3),1)":  "HLOOKUP no result found",
 		"=HLOOKUP(A1:B2,B2:B3,1)":        "HLOOKUP no result found",
+		// MATCH
+		"=MATCH()":              "MATCH requires 1 or 2 arguments",
+		"=MATCH(0,A1:A1,0,0)":   "MATCH requires 1 or 2 arguments",
+		"=MATCH(0,A1:A1,\"x\")": "MATCH requires numeric match_type argument",
+		"=MATCH(0,A1)":          "MATCH arguments lookup_array should be one-dimensional array",
+		"=MATCH(0,A1:B1)":       "MATCH arguments lookup_array should be one-dimensional array",
 		// VLOOKUP
 		"=VLOOKUP()":                     "VLOOKUP requires at least 3 arguments",
 		"=VLOOKUP(D2,D1,1,FALSE)":        "VLOOKUP requires second argument of table array",
@@ -2088,6 +2183,7 @@ func TestCalcCellValue(t *testing.T) {
 		"=LOOKUP()":                     "LOOKUP requires at least 2 arguments",
 		"=LOOKUP(D2,D1,D2)":             "LOOKUP requires second argument of table array",
 		"=LOOKUP(D2,D1,D2,FALSE)":       "LOOKUP requires at most 3 arguments",
+		"=LOOKUP(1,MUNIT(0))":           "LOOKUP requires not empty range as second argument",
 		"=LOOKUP(D1,MUNIT(1),MUNIT(1))": "LOOKUP no result found",
 		// ROW
 		"=ROW(1,2)":          "ROW requires at most 1 argument",
@@ -2607,4 +2703,51 @@ func TestCalcMIRR(t *testing.T) {
 		assert.EqualError(t, err, expected, formula)
 		assert.Equal(t, "", result, formula)
 	}
+}
+
+func TestCalcMATCH(t *testing.T) {
+	f := NewFile()
+	for cell, row := range map[string][]interface{}{
+		"A1": {"cccc", 7, 4, 16},
+		"A2": {"dddd", 2, 6, 11},
+		"A3": {"aaaa", 4, 7, 10},
+		"A4": {"bbbb", 1, 10, 7},
+		"A5": {"eeee", 8, 11, 6},
+		"A6": {nil, 11, 16, 4},
+	} {
+		assert.NoError(t, f.SetSheetRow("Sheet1", cell, &row))
+	}
+	formulaList := map[string]string{
+		"=MATCH(\"aaaa\",A1:A6,0)": "3",
+		"=MATCH(\"*b\",A1:A5,0)":   "4",
+		"=MATCH(\"?eee\",A1:A5,0)": "5",
+		"=MATCH(\"?*?e\",A1:A5,0)": "5",
+		"=MATCH(\"aaaa\",A1:A6,1)": "3",
+		"=MATCH(10,B1:B6)":         "5",
+		"=MATCH(8,C1:C6,1)":        "3",
+		"=MATCH(6,B1:B6,-1)":       "1",
+		"=MATCH(10,D1:D6,-1)":      "3",
+	}
+	for formula, expected := range formulaList {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "E1", formula))
+		result, err := f.CalcCellValue("Sheet1", "E1")
+		assert.NoError(t, err, formula)
+		assert.Equal(t, expected, result, formula)
+	}
+	calcError := map[string]string{
+		"=MATCH(3,C1:C6,1)":  "#N/A",
+		"=MATCH(5,C1:C6,-1)": "#N/A",
+	}
+	for formula, expected := range calcError {
+		assert.NoError(t, f.SetCellFormula("Sheet1", "E1", formula))
+		result, err := f.CalcCellValue("Sheet1", "E1")
+		assert.EqualError(t, err, expected, formula)
+		assert.Equal(t, "", result, formula)
+	}
+	assert.Equal(t, newErrorFormulaArg(formulaErrorNA, formulaErrorNA), calcMatch(2, nil, []formulaArg{}))
+}
+
+func TestStrToDate(t *testing.T) {
+	_, _, _, _, err := strToDate("")
+	assert.Equal(t, formulaErrorVALUE, err.Error)
 }

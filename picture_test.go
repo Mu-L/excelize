@@ -42,7 +42,7 @@ func TestAddPicture(t *testing.T) {
 		`{"x_offset": 140, "y_offset": 120, "hyperlink": "#Sheet2!D8", "hyperlink_type": "Location"}`))
 	// Test add picture to worksheet with offset, external hyperlink and positioning.
 	assert.NoError(t, f.AddPicture("Sheet1", "F21", filepath.Join("test", "images", "excel.jpg"),
-		`{"x_offset": 10, "y_offset": 10, "hyperlink": "https://github.com/360EntSecGroup-Skylar/excelize", "hyperlink_type": "External", "positioning": "oneCell"}`))
+		`{"x_offset": 10, "y_offset": 10, "hyperlink": "https://github.com/xuri/excelize", "hyperlink_type": "External", "positioning": "oneCell"}`))
 
 	file, err := ioutil.ReadFile(filepath.Join("test", "images", "excel.png"))
 	assert.NoError(t, err)
@@ -71,24 +71,24 @@ func TestAddPicture(t *testing.T) {
 }
 
 func TestAddPictureErrors(t *testing.T) {
-	xlsx, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
+	f, err := OpenFile(filepath.Join("test", "Book1.xlsx"))
 	assert.NoError(t, err)
 
 	// Test add picture to worksheet with invalid file path.
-	err = xlsx.AddPicture("Sheet1", "G21", filepath.Join("test", "not_exists_dir", "not_exists.icon"), "")
+	err = f.AddPicture("Sheet1", "G21", filepath.Join("test", "not_exists_dir", "not_exists.icon"), "")
 	if assert.Error(t, err) {
 		assert.True(t, os.IsNotExist(err), "Expected os.IsNotExist(err) == true")
 	}
 
 	// Test add picture to worksheet with unsupported file type.
-	err = xlsx.AddPicture("Sheet1", "G21", filepath.Join("test", "Book1.xlsx"), "")
+	err = f.AddPicture("Sheet1", "G21", filepath.Join("test", "Book1.xlsx"), "")
 	assert.EqualError(t, err, ErrImgExt.Error())
 
-	err = xlsx.AddPictureFromBytes("Sheet1", "G21", "", "Excel Logo", "jpg", make([]byte, 1))
+	err = f.AddPictureFromBytes("Sheet1", "G21", "", "Excel Logo", "jpg", make([]byte, 1))
 	assert.EqualError(t, err, ErrImgExt.Error())
 
 	// Test add picture to worksheet with invalid file data.
-	err = xlsx.AddPictureFromBytes("Sheet1", "G21", "", "Excel Logo", ".jpg", make([]byte, 1))
+	err = f.AddPictureFromBytes("Sheet1", "G21", "", "Excel Logo", ".jpg", make([]byte, 1))
 	assert.EqualError(t, err, "image: unknown format")
 }
 
